@@ -11,3 +11,8 @@ __pycache__/
 *.secret
 grafana_11.4.0_amd64.deb
 cursor.AppImage
+*.bak
+__pycache__/
+*.pyc
+*.db
+logs/

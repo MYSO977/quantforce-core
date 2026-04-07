@@ -1,0 +1,49 @@
+# QuantForce-Labs risk_gate 配置文件
+circuit_breaker:
+  daily_loss_limit_pct: 1.5
+  reset_time: "08:30"
+  block_new_orders_only: true
+
+market_regime:
+  tickers: ["SPY", "QQQ"]
+  ema_period: 20
+  require_both_down: true
+  cache_ttl_minutes: 60
+  update_time: "08:45"
+  data_period: "60d"
+
+position_cap:
+  max_single_pct: 8.0
+  position_cache_ttl_sec: 60
+
+atr_sizing:
+  atr_period: 14
+  atr_multiplier: 2.0
+  risk_per_trade_pct: 1.0
+  min_shares: 1
+  round_to_lot: false
+  data_period: "60d"
+
+trailing_stop:
+  enabled: true
+  atr_multiplier: 2.0
+  poll_interval_sec: 60
+  min_profit_to_activate_pct: 0.5
+
+rebalancing:
+  enabled: false
+
+ib:
+  host: "127.0.0.1"
+  port: 4002
+  client_id: 10
+  account: "DUP375010"
+
+db:
+  path: "/home/heng/llm_data/llm_tasks.db"
+  pnl_table: "daily_pnl"
+
+logging:
+  level: "INFO"
+  log_file: "/home/heng/logs/risk_gate.log"
+  json_format: true
