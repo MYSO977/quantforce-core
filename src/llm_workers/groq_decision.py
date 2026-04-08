@@ -8,6 +8,7 @@ QuantForce_Labs — groq_decision.py
 """
 import sqlite3, json, time, logging, os, socket
 import sys
+sys.path.insert(0, "/home/heng/QuantForce_Labs/src/risk")
 sys.path.insert(0, "/home/heng/QuantForce_Labs/src/core")
 from groq import Groq
 from fundamental_filter import fundamental_filter as fund_check
@@ -33,6 +34,7 @@ logging.basicConfig(
     ]
 )
 log = logging.getLogger(__name__)
+log.propagate = False  # 阻止重复输出到root logger
 _risk_gate = RiskGate(RISK_CONFIG)
 
 

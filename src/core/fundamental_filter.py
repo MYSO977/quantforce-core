@@ -31,7 +31,6 @@ PENALTY = {
 
 BASE_SCORE = 7.5
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [FUND] %(message)s")
 log = logging.getLogger(__name__)
 
 # ── 缓存 ─────────────────────────────────────

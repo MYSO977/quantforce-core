@@ -1,16 +1,22 @@
 # QuantForce-Labs risk_gate 配置文件
 circuit_breaker:
   daily_loss_limit_pct: 1.5
+  consecutive_loss_limit: 3        # 新增：连续亏损次数触发日熔断
+  weekly_loss_limit_pct: 5.0       # 新增：周熔断阈值
   reset_time: "08:30"
   block_new_orders_only: true
 
 market_regime:
   tickers: ["SPY", "QQQ"]
-  ema_period: 20
+  vix_ticker: "^VIX"               # 新增：VIX恐惧过滤器
+  sma200_period: 200               # 新增：主趋势过滤（原EMA20改为SMA200）
+  ema20_period: 20                 # 保留：短期辅助判断
+  vix_hard_block: 30               # 新增：VIX>30完全禁止开仓
+  vix_half_size: 20                # 新增：VIX>20仓位减半
   require_both_down: true
   cache_ttl_minutes: 60
   update_time: "08:45"
-  data_period: "60d"
+  data_period: "250d"              # 改：250天才能算SMA200
 
 position_cap:
   max_single_pct: 8.0
@@ -20,18 +26,22 @@ atr_sizing:
   atr_period: 14
   atr_multiplier: 2.0
   risk_per_trade_pct: 1.0
+  slippage_pct: 0.05               # 新增：滑点估算
   min_shares: 1
   round_to_lot: false
   data_period: "60d"
 
 trailing_stop:
   enabled: true
-  atr_multiplier: 2.0
+  atr_multiplier: 3.0              # 改：trailing比入场止损更宽（原2.0）
   poll_interval_sec: 60
-  min_profit_to_activate_pct: 0.5
+  min_profit_to_activate_pct: 1.5  # 改：至少盈利1.5%才激活trailing（原0.5%太敏感）
 
 rebalancing:
-  enabled: false
+  enabled: true                    # 改：开启
+  rebalance_up_pct: 10.0           # 新增：净值增长10%触发扩仓
+  rebalance_down_pct: 8.0          # 新增：回撤8%触发缩仓
+  min_recovery_pct: 98.0           # 新增：恢复到峰值98%才恢复满仓
 
 ib:
   host: "127.0.0.1"
