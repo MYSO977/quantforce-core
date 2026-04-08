@@ -19,3 +19,7 @@ nohup.out
 # 日志
 *.log
 logs/
+*.bak
+*.bak2
+__pycache__/
+*.pyc
