@@ -5,14 +5,15 @@ QuantForce_Labs — qwen_cleaner.py
 职责: 拉取 news_clean 任务，做关键词打标/去噪/格式清洗
       完成后自动插入下游 event_extract 任务（流水线自驱动）
 """
-import sqlite3, json, time, hashlib, requests, logging, os, socket
+import psycopg2, json, time, hashlib, requests, logging, os, socket
 
-DB_PATH   = os.getenv("LLM_DB", "/home/heng/llm_tasks.db")
-OLLAMA    = "http://localhost:11434"
-MODEL     = "qwen2.5:0.5b"
-NODE_IP   = socket.gethostbyname(socket.gethostname())
-POLL_SEC  = 5
-LOCK_TTL  = 120   # 秒，超时自动释放锁
+PG_CONF  = dict(host="192.168.0.18", port=5432, dbname="quantforce",
+                user="heng", password="Wh210712!")
+OLLAMA   = "http://localhost:11434"
+MODEL    = "qwen2.5:0.5b"
+NODE_IP  = socket.gethostbyname(socket.gethostname())
+POLL_SEC = 5
+LOCK_TTL = 120
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,19 +42,16 @@ SYSTEM_PROMPT = """你是金融新闻清洗助手。
 }"""
 
 def get_conn():
-    return sqlite3.connect(DB_PATH, timeout=20)
+    return psycopg2.connect(**PG_CONF)
 
 def claim_task(conn):
-    """原子认领一条 pending 任务，带锁"""
     cur = conn.cursor()
-    # 先回收超时锁
     cur.execute("""
         UPDATE llm_tasks SET status='pending', locked_by=NULL, locked_at=NULL
         WHERE task_type='news_clean' AND status='pending'
           AND locked_by IS NOT NULL
-          AND (julianday('now') - julianday(locked_at)) * 86400 > ?
+          AND EXTRACT(EPOCH FROM (NOW() - locked_at)) > %s
     """, (LOCK_TTL,))
-    # 认领一条
     cur.execute("""
         SELECT id, input_text FROM llm_tasks
         WHERE task_type='news_clean' AND status='pending' AND locked_by IS NULL
@@ -65,8 +63,8 @@ def claim_task(conn):
         return None, None
     task_id, input_text = row
     cur.execute("""
-        UPDATE llm_tasks SET locked_by=?, locked_at=CURRENT_TIMESTAMP
-        WHERE id=? AND locked_by IS NULL
+        UPDATE llm_tasks SET locked_by=%s, locked_at=NOW()
+        WHERE id=%s AND locked_by IS NULL
     """, (NODE_IP, task_id))
     conn.commit()
     return task_id, input_text
@@ -85,7 +83,6 @@ def call_qwen(text):
     resp.raise_for_status()
     content = resp.json()["message"]["content"].strip()
     latency = int((time.time() - t0) * 1000)
-    # 清理可能的 markdown 代码块
     if content.startswith("```"):
         content = content.split("```")[1]
         if content.startswith("json"):
@@ -93,15 +90,14 @@ def call_qwen(text):
     return json.loads(content), latency
 
 def enqueue_event_extract(conn, task_id, clean_text, tags):
-    """清洗完成后自动投递 event_extract 任务"""
     h = hashlib.sha256(clean_text.encode()).hexdigest()
     cur = conn.cursor()
-    cur.execute("SELECT id FROM llm_tasks WHERE input_hash=? AND task_type='event_extract'", (h,))
+    cur.execute("SELECT id FROM llm_tasks WHERE input_hash=%s AND task_type='event_extract'", (h,))
     if cur.fetchone():
-        return  # 已存在，跳过
+        return
     cur.execute("""
         INSERT INTO llm_tasks (task_type, input_hash, input_text, status)
-        VALUES ('event_extract', ?, ?, 'pending')
+        VALUES ('event_extract', %s, %s, 'pending')
     """, (h, clean_text))
     conn.commit()
     log.info(f"  → 投递 event_extract 任务 (hash={h[:8]})")
@@ -112,30 +108,27 @@ def process(conn, task_id, input_text):
         cur = conn.cursor()
         cur.execute("""
             UPDATE llm_tasks
-            SET status='done', node=?, model=?, output_json=?,
-                latency_ms=?, locked_by=NULL, locked_at=NULL
-            WHERE id=?
+            SET status='done', node=%s, model=%s, output_json=%s,
+                latency_ms=%s, locked_by=NULL, locked_at=NULL
+            WHERE id=%s
         """, (NODE_IP, MODEL, json.dumps(result, ensure_ascii=False),
               latency, task_id))
         conn.commit()
         log.info(f"[{task_id}] done  latency={latency}ms  relevant={result.get('relevant')}  tags={result.get('tags')}")
-
         if result.get("relevant"):
-            enqueue_event_extract(conn, task_id, result.get("clean_text",""), result.get("tags",[]))
-
+            enqueue_event_extract(conn, task_id, result.get("clean_text", ""), result.get("tags", []))
     except Exception as e:
         log.error(f"[{task_id}] failed: {e}")
         cur = conn.cursor()
         cur.execute("""
             UPDATE llm_tasks
-            SET status='failed', output_json=?, locked_by=NULL, locked_at=NULL
-            WHERE id=?
+            SET status='failed', output_json=%s, locked_by=NULL, locked_at=NULL
+            WHERE id=%s
         """, (json.dumps({"error": str(e)}), task_id))
         conn.commit()
 
 def main():
-    log.info(f"Qwen Cleaner 启动  node={NODE_IP}  model={MODEL}  db={DB_PATH}")
-    # 检查 Ollama
+    log.info(f"Qwen Cleaner 启动  node={NODE_IP}  model={MODEL}  db=PostgreSQL")
     try:
         r = requests.get(f"{OLLAMA}/api/tags", timeout=5)
         models = [m["name"] for m in r.json().get("models", [])]
