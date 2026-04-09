@@ -1,0 +1,7 @@
+psycopg2-binary
+pytz
+ib_insync
+groq
+requests
+pandas
+numpy
