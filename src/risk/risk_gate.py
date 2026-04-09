@@ -104,7 +104,19 @@ class RiskGate:
         action = signal.get("action", "")
         self._log_event("SIGNAL_IN", ticker, {"action": action, "raw_size": signal.get("size")})
 
-        # M2: 熔断检查
+        # T-014: 时间层
+        from datetime import time as dtime
+        from zoneinfo import ZoneInfo
+        _ET = ZoneInfo("America/New_York")
+        import datetime as _dt
+        _now = _dt.datetime.now(tz=_ET).time()
+        if not (dtime(9,30) <= _now < dtime(16,0)):
+            return self._reject(ticker, "TIME", f"市场未开盘或已收盘 ({_now.strftime('%H:%M')} ET)")
+        if _now < dtime(9,35):
+            return self._reject(ticker, "TIME", "开盘缓冲期，09:35 ET后允许入场")
+        if _now >= dtime(15,45):
+            return self._reject(ticker, "TIME", "收盘前保护窗口，15:45 ET后停止入场")
+                # M2: 熔断检查
         ok, reason = self._check_circuit_breaker()
         if not ok:
             return self._reject(ticker, "CIRCUIT_BREAKER", reason)

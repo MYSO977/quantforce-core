@@ -16,6 +16,8 @@ QuantForce Labs — 信号融合服务 (center .18)
 import os
 import sys
 import json
+from src.risk.risk_gate import RiskGate
+risk_gate = RiskGate(os.path.expanduser('~/QuantForce_Labs/src/risk/risk_config.yaml'))
 import time
 import logging
 import psycopg2
@@ -233,6 +235,28 @@ def apply_filters(ticker: str, news_sigs: list, tech_sigs: list) -> dict | None:
 #  ZMQ 推送
 # ─────────────────────────────────────────
 
+def fetch_account_state(conn) -> dict:
+    """从 account_state 表读最新一行供 risk_gate 使用"""
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT nav, equity_start, day_pnl, total_exposure, cash, buying_power
+                FROM account_state
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """
+            )
+            row = cur.fetchone()
+            if not row:
+                log.warning("[RISK] account_state 表为空，risk_gate 将保守拦截")
+                return {}
+            return dict(row)
+    except Exception as e:
+        log.error(f"[RISK] fetch_account_state 失败: {e}")
+        return {}
+
+
 def zmq_push(final_signal: dict, final_id: int):
     payload = {**final_signal, "signal_id": final_id}
     try:
@@ -269,6 +293,12 @@ def fusion_cycle(conn):
         if final:
             final_id = write_signals_final(conn, final)
             if final_id:
+                account = fetch_account_state(conn)
+                risk_result = risk_gate.evaluate(final)
+                if not risk_result.approved:
+                    log.warning(f"[RISK❌] {final['ticker']} blocked: {risk_result.reason}")
+                    skipped_ids.extend(group["ids"])
+                    continue
                 zmq_push(final, final_id)
                 set_cooldown(ticker)
             processed_ids.extend(group["ids"])
