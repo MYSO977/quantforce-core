@@ -5,11 +5,17 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-DSN = os.getenv('QUANT_PG_DSN', 
-    'host=192.168.0.18 port=5432 dbname=quantforce user=heng password=quantforce123')
+def _build_dsn() -> str:
+    # 优先读 .quant_env 里的分项变量
+    host     = os.getenv('PG_HOST', '192.168.0.18')
+    port     = os.getenv('PG_PORT', '5432')
+    dbname   = os.getenv('PG_DB',   'quantforce')
+    user     = os.getenv('PG_USER', 'heng')
+    password = os.getenv('PG_PASS', '')
+    return f'host={host} port={port} dbname={dbname} user={user} password={password}'
 
 def get_conn():
-    return psycopg2.connect(DSN, cursor_factory=RealDictCursor)
+    return psycopg2.connect(_build_dsn(), cursor_factory=RealDictCursor)
 
 SCHEMA = """
 -- L0 白名单：Russell3000 动态股票池
@@ -38,7 +44,7 @@ CREATE TABLE IF NOT EXISTS market_events (
 CREATE INDEX IF NOT EXISTS idx_market_events_symbol ON market_events(symbol);
 CREATE INDEX IF NOT EXISTS idx_market_events_ts     ON market_events(ts DESC);
 
--- L2 策略信号（已有，保持兼容）
+-- L2 策略信号
 CREATE TABLE IF NOT EXISTS signals_raw (
     id          BIGSERIAL PRIMARY KEY,
     symbol      TEXT NOT NULL,
@@ -52,7 +58,7 @@ CREATE TABLE IF NOT EXISTS signals_raw (
     created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
--- L3 融合信号（已有，保持兼容）
+-- L3 融合信号
 CREATE TABLE IF NOT EXISTS signals_final (
     id              BIGSERIAL PRIMARY KEY,
     ticker          TEXT NOT NULL,
